@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>理科クイズ（拡大版）</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', sans-serif;
+      background: #f5f5f7;
+      color: #1d1d1f;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* ===== Header ===== */
+    .header {
+      background: #fff;
+      padding: 8px 16px;
+      border-bottom: 1px solid #e5e5e7;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      flex-shrink: 0;
+    }
+    .header h1 { font-size: 18px; font-weight: 700; flex: 1; }
+    .back-btn {
+      background: none; border: none;
+      font-size: 16px; color: #007aff; cursor: pointer; padding: 6px;
+    }
+    .page-info {
+      font-size: 14px; color: #86868b;
+    }
+
+    /* ===== Screen Management ===== */
+    .screen { display: none; min-height: 100dvh; }
+    .screen.active { display: flex; flex-direction: column; }
+    #quiz.active { height: 100dvh; min-height: 0; overflow: hidden; }
+
+    /* ===== Home ===== */
+    .page-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+      gap: 10px;
+      padding: 12px;
+    }
+    .page-card {
+      background: #fff;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      cursor: pointer;
+      transition: transform 0.15s;
+    }
+    .page-card:active { transform: scale(0.97); }
+    .page-card img { width: 100%; display: block; }
+    .page-card-info {
+      padding: 6px;
+      font-size: 12px;
+      text-align: center;
+    }
+    .page-card-info .count { font-weight: 600; }
+    .page-card-badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 600;
+      margin-top: 3px;
+    }
+    .badge-perfect { background: #d4edda; color: #155724; }
+    .badge-has-errors { background: #fff3cd; color: #856404; }
+    .badge-new { background: #e8f0fe; color: #1a73e8; }
+
+    /* ===== Quiz ===== */
+    .canvas-wrapper {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      background: #e8e8ed;
+      display: flex;
+      justify-content: center;
+    }
+    #quizCanvas {
+      width: 100%;
+      display: block;
+      background: #fff;
+    }
+
+    /* ===== Controls ===== */
+    .controls {
+      background: #fff;
+      border-top: 1px solid #e5e5e7;
+      padding: 8px 16px;
+      padding-bottom: max(8px, env(safe-area-inset-bottom));
+      flex-shrink: 0;
+    }
+    .progress-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .progress-bar {
+      flex: 1; height: 4px; background: #e5e5e7; border-radius: 2px; overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%; background: #007aff; border-radius: 2px; transition: width 0.3s;
+    }
+    .progress-text { font-size: 13px; color: #86868b; white-space: nowrap; }
+
+    .btn-row { display: flex; gap: 10px; }
+    .btn {
+      flex: 1; padding: 14px; font-size: 16px; font-weight: 600;
+      border: none; border-radius: 10px; cursor: pointer;
+      transition: transform 0.1s;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn-primary { background: #007aff; color: #fff; }
+    .btn-correct { background: #34c759; color: #fff; }
+    .btn-incorrect { background: #ff3b30; color: #fff; }
+    .btn-secondary { background: #e5e5e7; color: #1d1d1f; }
+    .btn:disabled { opacity: 0.35; }
+
+    /* iPad / touch optimization */
+    .btn, .page-card, .back-btn {
+      touch-action: manipulation;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    .btn { min-height: 48px; }
+    .hidden { display: none !important; }
+
+    /* ===== Results ===== */
+    .results-box {
+      margin: 20px 16px;
+      background: #fff;
+      border-radius: 12px;
+      padding: 24px;
+      text-align: center;
+    }
+    .results-score { font-size: 42px; font-weight: 700; }
+    .results-score span { font-size: 22px; color: #86868b; }
+    .results-label { font-size: 15px; color: #86868b; margin-top: 6px; }
+    .results-actions { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+
+    /* ===== Review list ===== */
+    .review-section { padding: 16px; }
+    .review-section h3 { font-size: 16px; margin-bottom: 10px; }
+    .review-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px; background: #fff; border-radius: 8px; margin-bottom: 6px;
+    }
+    .review-icon { font-size: 18px; }
+  </style>
+</head>
+<body>
+
+  <!-- ===== Home ===== -->
+  <div id="home" class="screen active">
+    <div class="header">
+      <h1>理科クイズ（拡大版）</h1>
+    </div>
+    <div class="page-grid" id="page-grid"></div>
+  </div>
+
+  <!-- ===== Quiz ===== -->
+  <div id="quiz" class="screen">
+    <div class="header">
+      <button class="back-btn" id="quiz-back">&#x2190; 戻る</button>
+      <h1 id="quiz-title"></h1>
+      <span class="page-info" id="quiz-page-info"></span>
+    </div>
+    <div class="canvas-wrapper">
+      <canvas id="quizCanvas"></canvas>
+    </div>
+    <div class="controls">
+      <div class="progress-row">
+        <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+        <span class="progress-text" id="progress-text"></span>
+      </div>
+      <div class="btn-row" id="reveal-row">
+        <button class="btn btn-primary" id="reveal-btn">答えを表示</button>
+      </div>
+      <div class="btn-row hidden" id="judge-row">
+        <button class="btn btn-correct" id="correct-btn">&#x2B55; 正解</button>
+        <button class="btn btn-incorrect" id="incorrect-btn">&#x274C; 不正解</button>
+      </div>
+      <div class="btn-row hidden" id="done-row">
+        <button class="btn btn-secondary" id="done-home-btn">ホームへ</button>
+        <button class="btn btn-primary" id="done-review-btn">間違えた問題</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Results ===== -->
+  <div id="results" class="screen">
+    <div class="header">
+      <button class="back-btn" id="results-back">&#x2190; ホーム</button>
+      <h1>結果</h1>
+    </div>
+    <div class="results-box" id="results-box"></div>
+    <div class="review-section" id="review-section"></div>
+    <div class="results-actions" id="results-actions"></div>
+  </div>
+
+<script>
+// ============================================================
+// Data & State
+// ============================================================
+const STORAGE_KEY = 'quiz-v2-split-history';
+const CACHE_BUST = Date.now();
+let regionsData = null;
+let currentPage = null;
+let currentRegions = [];
+let currentIndex = 0;
+let sessionResults = [];
+let maskedImg = null;
+let originalImg = null;
+let canvas, ctx;
+
+// ============================================================
+// LocalStorage
+// ============================================================
+function loadHistory() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
+  catch { return {}; }
+}
+function saveHistory(h) { localStorage.setItem(STORAGE_KEY, JSON.stringify(h)); }
+
+function recordResult(regionId, correct) {
+  const h = loadHistory();
+  if (!h[regionId]) h[regionId] = [];
+  h[regionId].push({ date: new Date().toISOString(), correct });
+  saveHistory(h);
+}
+function getLastResult(regionId) {
+  const h = loadHistory();
+  const arr = h[regionId];
+  if (!arr || arr.length === 0) return null;
+  return arr[arr.length - 1].correct;
+}
+function getPageStats(pageData) {
+  let total = pageData.regions.length;
+  let correct = 0, incorrect = 0;
+  for (const r of pageData.regions) {
+    const last = getLastResult(r.id);
+    if (last === true) correct++;
+    else if (last === false) incorrect++;
+  }
+  return { total, correct, incorrect, unanswered: total - correct - incorrect };
+}
+
+// ============================================================
+// Screen Management
+// ============================================================
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0, 0);
+}
+
+// ============================================================
+// Load regions data
+// ============================================================
+async function loadRegions() {
+  const resp = await fetch(`pages/regions.json?v=${CACHE_BUST}`);
+  regionsData = await resp.json();
+  renderHome();
+}
+
+// ============================================================
+// Home Screen
+// ============================================================
+function getPageLabel(pageData) {
+  return pageData.label || `P${pageData.page}`;
+}
+
+function renderHome() {
+  const grid = document.getElementById('page-grid');
+  grid.innerHTML = '';
+
+  for (const pageData of regionsData.pages) {
+    const stats = getPageStats(pageData);
+    const card = document.createElement('div');
+    card.className = 'page-card';
+
+    let badgeHtml = '';
+    if (stats.unanswered === stats.total) {
+      badgeHtml = '<span class="page-card-badge badge-new">未回答</span>';
+    } else if (stats.incorrect > 0) {
+      badgeHtml = `<span class="page-card-badge badge-has-errors">${stats.incorrect}問 不正解</span>`;
+    } else {
+      badgeHtml = '<span class="page-card-badge badge-perfect">全問正解</span>';
+    }
+
+    card.innerHTML = `
+      <img src="pages/page${pageData.page}_masked.png?v=${CACHE_BUST}" loading="lazy">
+      <div class="page-card-info">
+        <div>${getPageLabel(pageData)}</div>
+        <div class="count">${stats.correct}/${stats.total} 正解</div>
+        ${badgeHtml}
+      </div>
+    `;
+    card.addEventListener('click', () => startQuiz(pageData));
+    grid.appendChild(card);
+  }
+
+  showScreen('home');
+}
+
+// ============================================================
+// Quiz
+// ============================================================
+function startQuiz(pageData, reviewOnly = false) {
+  currentPage = pageData;
+
+  if (reviewOnly) {
+    currentRegions = pageData.regions.filter(r => getLastResult(r.id) === false);
+  } else {
+    currentRegions = [...pageData.regions];
+  }
+
+  if (currentRegions.length === 0) {
+    alert('対象の問題がありません');
+    return;
+  }
+
+  currentIndex = 0;
+  sessionResults = [];
+
+  document.getElementById('quiz-title').textContent = getPageLabel(pageData);
+  document.getElementById('quiz-page-info').textContent = `${currentRegions.length}問`;
+
+  canvas = document.getElementById('quizCanvas');
+  ctx = canvas.getContext('2d');
+
+  // Load images
+  const maskedPromise = loadImage(`pages/page${pageData.page}_masked.png?v=${CACHE_BUST}`);
+  const originalPromise = loadImage(`pages/page${pageData.page}.png?v=${CACHE_BUST}`);
+
+  Promise.all([maskedPromise, originalPromise]).then(([masked, original]) => {
+    maskedImg = masked;
+    originalImg = original;
+
+    canvas.width = masked.width;
+    canvas.height = masked.height;
+    canvas.style.aspectRatio = `${masked.width} / ${masked.height}`;
+    ctx.drawImage(maskedImg, 0, 0);
+
+    ctx.strokeStyle = 'rgba(200, 200, 200, 0.4)';
+    ctx.lineWidth = 1;
+    for (const r of currentRegions) {
+      ctx.strokeRect(r.x, r.y, r.w, r.h);
+    }
+
+    updateProgress();
+    showRevealButton();
+    showScreen('quiz');
+  });
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+function revealCurrentAnswer() {
+  if (currentIndex >= currentRegions.length) return;
+
+  const r = currentRegions[currentIndex];
+
+  ctx.drawImage(
+    maskedImg,
+    r.x - 2, r.y - 2, r.w + 4, r.h + 4,
+    r.x - 2, r.y - 2, r.w + 4, r.h + 4
+  );
+
+  ctx.drawImage(
+    originalImg,
+    r.x, r.y, r.w, r.h,
+    r.x, r.y, r.w, r.h
+  );
+
+  ctx.strokeStyle = '#e8a040';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(r.x - 1, r.y - 1, r.w + 2, r.h + 2);
+
+  scrollToRegion(r);
+  showJudgeButtons();
+}
+
+function scrollToRegion(r) {
+  const wrapper = document.querySelector('.canvas-wrapper');
+  const canvasRect = canvas.getBoundingClientRect();
+  const scale = canvasRect.width / canvas.width;
+  const targetY = r.y * scale - wrapper.clientHeight * 0.3;
+  wrapper.scrollTo({ top: targetY, behavior: 'smooth' });
+}
+
+function judgeAnswer(correct) {
+  const r = currentRegions[currentIndex];
+  recordResult(r.id, correct);
+  sessionResults.push({ region: r, correct });
+
+  if (correct) {
+    ctx.strokeStyle = '#34c759';
+  } else {
+    ctx.strokeStyle = '#ff3b30';
+  }
+  ctx.lineWidth = 3;
+  ctx.strokeRect(r.x - 2, r.y - 2, r.w + 4, r.h + 4);
+
+  currentIndex++;
+  updateProgress();
+
+  if (currentIndex < currentRegions.length) {
+    showRevealButton();
+  } else {
+    showDoneButtons();
+  }
+}
+
+function updateProgress() {
+  const pct = currentRegions.length > 0
+    ? Math.round((currentIndex / currentRegions.length) * 100) : 0;
+  document.getElementById('progress-fill').style.width = pct + '%';
+  document.getElementById('progress-text').textContent =
+    `${currentIndex} / ${currentRegions.length}`;
+}
+
+function highlightActiveRegion() {
+  if (currentIndex >= currentRegions.length) return;
+  const r = currentRegions[currentIndex];
+
+  ctx.fillStyle = '#fde8c8';
+  ctx.fillRect(r.x, r.y, r.w, r.h);
+
+  ctx.strokeStyle = '#e8a040';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(r.x - 1, r.y - 1, r.w + 2, r.h + 2);
+
+  scrollToRegion(r);
+}
+
+function showRevealButton() {
+  document.getElementById('reveal-row').classList.remove('hidden');
+  document.getElementById('judge-row').classList.add('hidden');
+  document.getElementById('done-row').classList.add('hidden');
+  highlightActiveRegion();
+}
+function showJudgeButtons() {
+  document.getElementById('reveal-row').classList.add('hidden');
+  document.getElementById('judge-row').classList.remove('hidden');
+  document.getElementById('done-row').classList.add('hidden');
+}
+function showDoneButtons() {
+  document.getElementById('reveal-row').classList.add('hidden');
+  document.getElementById('judge-row').classList.add('hidden');
+  document.getElementById('done-row').classList.remove('hidden');
+
+  const incorrectCount = sessionResults.filter(r => !r.correct).length;
+  document.getElementById('done-review-btn').disabled = incorrectCount === 0;
+  document.getElementById('done-review-btn').textContent =
+    `間違えた問題（${incorrectCount}問）`;
+}
+
+// ============================================================
+// Results
+// ============================================================
+function showResults() {
+  const correctCount = sessionResults.filter(r => r.correct).length;
+  const total = sessionResults.length;
+  const pct = total > 0 ? Math.round((correctCount / total) * 100) : 0;
+
+  let emoji = pct === 100 ? '&#x1F389;' : pct >= 80 ? '&#x1F44D;' : pct >= 60 ? '&#x1F4AA;' : '&#x1F4DA;';
+
+  document.getElementById('results-box').innerHTML = `
+    <div style="font-size:40px">${emoji}</div>
+    <div class="results-score">${correctCount}<span> / ${total}</span></div>
+    <div class="results-label">${pct}% 正解（${getPageLabel(currentPage)}）</div>
+  `;
+
+  const reviewEl = document.getElementById('review-section');
+  const incorrectResults = sessionResults.filter(r => !r.correct);
+  if (incorrectResults.length > 0) {
+    reviewEl.innerHTML = `<h3>不正解: ${incorrectResults.length}問</h3>` +
+      incorrectResults.map(r =>
+        `<div class="review-item">
+          <span class="review-icon">&#x274C;</span>
+          <span>${r.region.id}</span>
+        </div>`
+      ).join('');
+  } else {
+    reviewEl.innerHTML = '<h3>全問正解!</h3>';
+  }
+
+  const actionsEl = document.getElementById('results-actions');
+  actionsEl.innerHTML = `
+    <button class="btn btn-secondary" onclick="renderHome()">ホームへ</button>
+    <button class="btn btn-primary" onclick="startQuiz(currentPage)">もう一度（全問）</button>
+    <button class="btn btn-primary" style="background:#ff9500"
+      onclick="startQuiz(currentPage, true)"
+      ${incorrectResults.length === 0 ? 'disabled' : ''}>
+      間違えた問題だけ（${incorrectResults.length}問）
+    </button>
+  `;
+
+  showScreen('results');
+}
+
+// ============================================================
+// Event Listeners
+// ============================================================
+document.getElementById('reveal-btn').addEventListener('click', revealCurrentAnswer);
+document.getElementById('correct-btn').addEventListener('click', () => judgeAnswer(true));
+document.getElementById('incorrect-btn').addEventListener('click', () => judgeAnswer(false));
+
+document.getElementById('quiz-back').addEventListener('click', () => {
+  if (currentIndex > 0 && currentIndex < currentRegions.length) {
+    if (!confirm('中断しますか？')) return;
+  }
+  renderHome();
+});
+
+document.getElementById('done-home-btn').addEventListener('click', showResults);
+document.getElementById('done-review-btn').addEventListener('click', () => {
+  showResults();
+});
+
+document.getElementById('results-back').addEventListener('click', renderHome);
+
+// ============================================================
+// Init
+// ============================================================
+loadRegions().catch(err => {
+  document.body.innerHTML = `
+    <div style="padding:40px; text-align:center; font-size:16px;">
+      <h2>読み込みエラー</h2>
+      <p style="margin-top:16px; color:#86868b;">
+        pages/regions.json の読み込みに失敗しました。
+      </p>
+    </div>
+  `;
+});
+</script>
+</body>
+</html>

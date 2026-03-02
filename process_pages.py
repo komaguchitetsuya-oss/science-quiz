@@ -279,7 +279,87 @@ def process_pdf(pdf_path):
         json.dump({"pages": all_pages}, f, ensure_ascii=False, indent=2)
 
     print(f"\nDone! Regions saved to {json_path}")
+    return all_pages
+
+
+def generate_split_pages(full_pages_data):
+    """各ページを左右に分割して split/pages/ に保存"""
+    split_dir = os.path.join(os.path.dirname(__file__), "split", "pages")
+    os.makedirs(split_dir, exist_ok=True)
+
+    split_pages = []
+    split_num = 0
+
+    for page_data in full_pages_data:
+        pn = page_data["page"]
+        orig_w = page_data["width"]
+        mid_x = orig_w // 2
+
+        # 元画像とマスク画像を読み込み
+        orig = np.array(Image.open(os.path.join(PAGES_DIR, f"page{pn}.png")))
+        masked = np.array(Image.open(os.path.join(PAGES_DIR, f"page{pn}_masked.png")))
+
+        for side, label in [("left", "L"), ("right", "R")]:
+            split_num += 1
+            if side == "left":
+                x_start, x_end = 0, mid_x
+            else:
+                x_start, x_end = mid_x, orig_w
+
+            # 画像を切り出し
+            orig_half = orig[:, x_start:x_end]
+            masked_half = masked[:, x_start:x_end]
+            sh, sw = orig_half.shape[:2]
+
+            Image.fromarray(orig_half).save(
+                os.path.join(split_dir, f"page{split_num}.png"), optimize=True)
+            Image.fromarray(masked_half).save(
+                os.path.join(split_dir, f"page{split_num}_masked.png"), optimize=True)
+
+            # 該当する領域をフィルタ＆座標調整
+            half_regions = []
+            for r in page_data["regions"]:
+                center_x = r["x"] + r["w"] / 2
+                if side == "left" and center_x < mid_x:
+                    half_regions.append({
+                        "x": r["x"],
+                        "y": r["y"],
+                        "w": r["w"],
+                        "h": r["h"],
+                        "id": f"s{split_num}-r{len(half_regions) + 1}",
+                    })
+                elif side == "right" and center_x >= mid_x:
+                    half_regions.append({
+                        "x": r["x"] - x_start,
+                        "y": r["y"],
+                        "w": r["w"],
+                        "h": r["h"],
+                        "id": f"s{split_num}-r{len(half_regions) + 1}",
+                    })
+
+            # y座標でソート（上→下）
+            half_regions.sort(key=lambda r: r["y"])
+
+            split_pages.append({
+                "page": split_num,
+                "label": f"P{pn}{label}",
+                "width": sw,
+                "height": sh,
+                "regions": half_regions,
+            })
+
+            print(f"  Split {split_num} (P{pn}{label}): {sw}x{sh}, "
+                  f"{len(half_regions)} regions")
+
+    # JSON保存
+    json_path = os.path.join(split_dir, "regions.json")
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump({"pages": split_pages}, f, ensure_ascii=False, indent=2)
+
+    print(f"\nSplit pages saved to {split_dir}")
 
 
 if __name__ == "__main__":
-    process_pdf(PDF_PATH)
+    full_data = process_pdf(PDF_PATH)
+    print("\n--- Generating split pages ---")
+    generate_split_pages(full_data)
