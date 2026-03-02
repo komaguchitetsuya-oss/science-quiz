@@ -135,6 +135,8 @@
       width: 100%;
       display: block;
       background: #fff;
+      image-rendering: -webkit-optimize-contrast;
+      image-rendering: crisp-edges;
     }
 
     /* ===== Controls ===== */
@@ -686,6 +688,7 @@ function beginQuiz() {
 
   canvas = document.getElementById('quizCanvas');
   ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
   currentPageNum = -1;
 
   loadPageAndDraw(currentIndex);
