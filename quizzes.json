@@ -3,8 +3,20 @@
     {
       "id": "630-01",
       "title": "630-01 気体と水溶液の性質",
-      "pageCount": 8,
-      "totalRegions": 328
+      "pageCount": 9,
+      "totalRegions": 335
+    },
+    {
+      "id": "630-02",
+      "title": "630-02 植物のはたらき① ～光合成と呼吸～",
+      "pageCount": 9,
+      "totalRegions": 377
+    },
+    {
+      "id": "630-03",
+      "title": "630-03 植物のはたらき② ～光合成と蒸散～",
+      "pageCount": 9,
+      "totalRegions": 424
     }
   ]
 }
