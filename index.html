@@ -17,7 +17,7 @@
     /* ===== Header ===== */
     .header {
       background: #fff;
-      padding: 12px 16px;
+      padding: 8px 16px;
       border-bottom: 1px solid #e5e5e7;
       display: flex;
       align-items: center;
@@ -25,6 +25,7 @@
       position: sticky;
       top: 0;
       z-index: 10;
+      flex-shrink: 0;
     }
     .header h1 { font-size: 18px; font-weight: 700; flex: 1; }
     .back-btn {
@@ -38,6 +39,8 @@
     /* ===== Screen Management ===== */
     .screen { display: none; min-height: 100dvh; }
     .screen.active { display: flex; flex-direction: column; }
+    /* クイズ画面はビューポートに固定（ボタンが画面外に出ないように） */
+    #quiz.active { height: 100dvh; min-height: 0; overflow: hidden; }
 
     /* ===== Home ===== */
     .page-grid {
@@ -93,14 +96,15 @@
     .controls {
       background: #fff;
       border-top: 1px solid #e5e5e7;
-      padding: 12px 16px;
-      padding-bottom: max(12px, env(safe-area-inset-bottom));
+      padding: 8px 16px;
+      padding-bottom: max(8px, env(safe-area-inset-bottom));
+      flex-shrink: 0;
     }
     .progress-row {
       display: flex;
       align-items: center;
       gap: 8px;
-      margin-bottom: 10px;
+      margin-bottom: 6px;
     }
     .progress-bar {
       flex: 1; height: 4px; background: #e5e5e7; border-radius: 2px; overflow: hidden;
