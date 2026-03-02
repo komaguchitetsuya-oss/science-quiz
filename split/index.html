@@ -27,13 +27,14 @@
       z-index: 10;
       flex-shrink: 0;
     }
-    .header h1 { font-size: 18px; font-weight: 700; flex: 1; }
+    .header h1 { font-size: 18px; font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .back-btn {
       background: none; border: none;
       font-size: 16px; color: #007aff; cursor: pointer; padding: 6px;
+      white-space: nowrap;
     }
     .page-info {
-      font-size: 14px; color: #86868b;
+      font-size: 14px; color: #86868b; white-space: nowrap;
     }
 
     /* ===== Screen Management ===== */
@@ -42,39 +43,54 @@
     #quiz.active { height: 100dvh; min-height: 0; overflow: hidden; }
 
     /* ===== Home ===== */
-    .page-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-      gap: 10px;
-      padding: 12px;
-    }
-    .page-card {
+    .quiz-list { padding: 12px 16px; }
+    .quiz-card {
       background: #fff;
-      border-radius: 10px;
-      overflow: hidden;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 10px;
       box-shadow: 0 1px 3px rgba(0,0,0,0.08);
       cursor: pointer;
       transition: transform 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 14px;
     }
-    .page-card:active { transform: scale(0.97); }
-    .page-card img { width: 100%; display: block; }
-    .page-card-info {
-      padding: 6px;
-      font-size: 12px;
-      text-align: center;
+    .quiz-card:active { transform: scale(0.98); }
+    .quiz-card-thumb {
+      width: 60px; height: 60px;
+      border-radius: 8px;
+      object-fit: cover;
+      flex-shrink: 0;
+      background: #e8e8ed;
     }
-    .page-card-info .count { font-weight: 600; }
-    .page-card-badge {
+    .quiz-card-body { flex: 1; min-width: 0; }
+    .quiz-card-title { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+    .quiz-card-stats { font-size: 13px; color: #86868b; }
+    .quiz-card-badge {
       display: inline-block;
-      padding: 2px 6px;
+      padding: 2px 8px;
       border-radius: 4px;
-      font-size: 10px;
+      font-size: 11px;
       font-weight: 600;
-      margin-top: 3px;
+      margin-top: 4px;
     }
     .badge-perfect { background: #d4edda; color: #155724; }
     .badge-has-errors { background: #fff3cd; color: #856404; }
     .badge-new { background: #e8f0fe; color: #1a73e8; }
+    .badge-in-progress { background: #e0d4f5; color: #5e35b1; }
+
+    /* ===== Resume Dialog ===== */
+    .resume-box {
+      margin: 20px 16px;
+      background: #fff;
+      border-radius: 12px;
+      padding: 24px;
+      text-align: center;
+    }
+    .resume-box p { font-size: 15px; color: #86868b; margin-bottom: 8px; }
+    .resume-box .resume-info { font-size: 20px; font-weight: 700; color: #1d1d1f; margin-bottom: 16px; }
+    .resume-actions { padding: 0 16px; display: flex; flex-direction: column; gap: 10px; }
 
     /* ===== Quiz ===== */
     .canvas-wrapper {
@@ -126,8 +142,7 @@
     .btn-secondary { background: #e5e5e7; color: #1d1d1f; }
     .btn:disabled { opacity: 0.35; }
 
-    /* iPad / touch optimization */
-    .btn, .page-card, .back-btn {
+    .btn, .quiz-card, .back-btn {
       touch-action: manipulation;
       -webkit-touch-callout: none;
       -webkit-user-select: none;
@@ -148,15 +163,6 @@
     .results-score span { font-size: 22px; color: #86868b; }
     .results-label { font-size: 15px; color: #86868b; margin-top: 6px; }
     .results-actions { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
-
-    /* ===== Review list ===== */
-    .review-section { padding: 16px; }
-    .review-section h3 { font-size: 16px; margin-bottom: 10px; }
-    .review-item {
-      display: flex; align-items: center; gap: 8px;
-      padding: 10px; background: #fff; border-radius: 8px; margin-bottom: 6px;
-    }
-    .review-icon { font-size: 18px; }
   </style>
 </head>
 <body>
@@ -166,7 +172,24 @@
     <div class="header">
       <h1>理科クイズ（拡大版）</h1>
     </div>
-    <div class="page-grid" id="page-grid"></div>
+    <div class="quiz-list" id="quiz-list"></div>
+  </div>
+
+  <!-- ===== Resume ===== -->
+  <div id="resume" class="screen">
+    <div class="header">
+      <button class="back-btn" id="resume-back">&#x2190; 戻る</button>
+      <h1 id="resume-title"></h1>
+    </div>
+    <div class="resume-box">
+      <p>前回の続きがあります</p>
+      <div class="resume-info" id="resume-info"></div>
+    </div>
+    <div class="resume-actions">
+      <button class="btn btn-primary" id="resume-continue-btn">続きから再開</button>
+      <button class="btn btn-secondary" id="resume-restart-btn">最初からやり直す</button>
+      <button class="btn btn-secondary" id="resume-review-btn" style="background:#ff9500;color:#fff">間違えた問題だけ</button>
+    </div>
   </div>
 
   <!-- ===== Quiz ===== -->
@@ -205,33 +228,39 @@
       <h1>結果</h1>
     </div>
     <div class="results-box" id="results-box"></div>
-    <div class="review-section" id="review-section"></div>
     <div class="results-actions" id="results-actions"></div>
   </div>
 
 <script>
 // ============================================================
-// Data & State
+// Configuration — Split version uses separate storage keys
 // ============================================================
-const STORAGE_KEY = 'quiz-v2-split-history';
+const HISTORY_KEY = 'quiz-v2-split-history';
+const PROGRESS_KEY = 'quiz-split-progress';
 const CACHE_BUST = Date.now();
-let regionsData = null;
-let currentPage = null;
-let currentRegions = [];
+
+// ============================================================
+// State
+// ============================================================
+let quizzesList = [];
+let currentQuizMeta = null;
+let currentQuizData = null;
+let allRegions = [];
 let currentIndex = 0;
 let sessionResults = [];
+let currentPageNum = -1;
 let maskedImg = null;
 let originalImg = null;
 let canvas, ctx;
 
 // ============================================================
-// LocalStorage
+// LocalStorage — History
 // ============================================================
 function loadHistory() {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || {}; }
   catch { return {}; }
 }
-function saveHistory(h) { localStorage.setItem(STORAGE_KEY, JSON.stringify(h)); }
+function saveHistory(h) { localStorage.setItem(HISTORY_KEY, JSON.stringify(h)); }
 
 function recordResult(regionId, correct) {
   const h = loadHistory();
@@ -245,15 +274,54 @@ function getLastResult(regionId) {
   if (!arr || arr.length === 0) return null;
   return arr[arr.length - 1].correct;
 }
-function getPageStats(pageData) {
-  let total = pageData.regions.length;
-  let correct = 0, incorrect = 0;
-  for (const r of pageData.regions) {
-    const last = getLastResult(r.id);
-    if (last === true) correct++;
-    else if (last === false) incorrect++;
+
+// ============================================================
+// LocalStorage — Progress
+// ============================================================
+function loadAllProgress() {
+  try { return JSON.parse(localStorage.getItem(PROGRESS_KEY)) || {}; }
+  catch { return {}; }
+}
+function getSavedProgress(quizId) {
+  return loadAllProgress()[quizId] || null;
+}
+function saveProgress() {
+  if (!currentQuizData) return;
+  const all = loadAllProgress();
+  all[currentQuizData.id] = {
+    currentIndex,
+    results: sessionResults.map(r => ({ id: r.region.id, correct: r.correct })),
+    savedAt: new Date().toISOString()
+  };
+  localStorage.setItem(PROGRESS_KEY, JSON.stringify(all));
+}
+function clearProgress(quizId) {
+  const all = loadAllProgress();
+  delete all[quizId];
+  localStorage.setItem(PROGRESS_KEY, JSON.stringify(all));
+}
+
+// ============================================================
+// Quiz Stats
+// ============================================================
+function getQuizStats(quizId) {
+  const progress = getSavedProgress(quizId);
+  const h = loadHistory();
+  let total = 0, correct = 0, incorrect = 0;
+
+  for (const [regionId, records] of Object.entries(h)) {
+    if (regionId.startsWith(quizId + '-')) {
+      total++;
+      const last = records[records.length - 1];
+      if (last.correct) correct++;
+      else incorrect++;
+    }
   }
-  return { total, correct, incorrect, unanswered: total - correct - incorrect };
+
+  return {
+    total, correct, incorrect,
+    progressIndex: progress ? progress.currentIndex : null,
+  };
 }
 
 // ============================================================
@@ -266,103 +334,239 @@ function showScreen(id) {
 }
 
 // ============================================================
-// Load regions data
+// Init
 // ============================================================
-async function loadRegions() {
-  const resp = await fetch(`pages/regions.json?v=${CACHE_BUST}`);
-  regionsData = await resp.json();
-  renderHome();
+async function init() {
+  try {
+    const resp = await fetch(`quizzes.json?v=${CACHE_BUST}`);
+    const data = await resp.json();
+    quizzesList = data.quizzes || [];
+    renderHome();
+  } catch (err) {
+    document.body.innerHTML = `
+      <div style="padding:40px; text-align:center; font-size:16px;">
+        <h2>読み込みエラー</h2>
+        <p style="margin-top:16px; color:#86868b;">quizzes.json の読み込みに失敗しました。</p>
+      </div>`;
+  }
 }
 
 // ============================================================
 // Home Screen
 // ============================================================
-function getPageLabel(pageData) {
-  return pageData.label || `P${pageData.page}`;
-}
-
 function renderHome() {
-  const grid = document.getElementById('page-grid');
-  grid.innerHTML = '';
+  const list = document.getElementById('quiz-list');
+  list.innerHTML = '';
 
-  for (const pageData of regionsData.pages) {
-    const stats = getPageStats(pageData);
+  if (quizzesList.length === 0) {
+    list.innerHTML = '<p style="text-align:center;color:#86868b;padding:40px;">クイズがまだありません</p>';
+    showScreen('home');
+    return;
+  }
+
+  for (const meta of quizzesList) {
+    const stats = getQuizStats(meta.id);
+    const progress = getSavedProgress(meta.id);
     const card = document.createElement('div');
-    card.className = 'page-card';
+    card.className = 'quiz-card';
 
     let badgeHtml = '';
-    if (stats.unanswered === stats.total) {
-      badgeHtml = '<span class="page-card-badge badge-new">未回答</span>';
+    if (progress && progress.currentIndex > 0) {
+      badgeHtml = `<span class="quiz-card-badge badge-in-progress">回答途中 (${progress.currentIndex}/${meta.totalRegions})</span>`;
+    } else if (stats.total === 0) {
+      badgeHtml = '<span class="quiz-card-badge badge-new">未回答</span>';
     } else if (stats.incorrect > 0) {
-      badgeHtml = `<span class="page-card-badge badge-has-errors">${stats.incorrect}問 不正解</span>`;
+      badgeHtml = `<span class="quiz-card-badge badge-has-errors">${stats.incorrect}問 不正解</span>`;
+    } else if (stats.correct > 0 && stats.correct >= meta.totalRegions) {
+      badgeHtml = '<span class="quiz-card-badge badge-perfect">全問正解</span>';
+    } else if (stats.correct > 0) {
+      badgeHtml = `<span class="quiz-card-badge badge-perfect">${stats.correct}問 正解</span>`;
     } else {
-      badgeHtml = '<span class="page-card-badge badge-perfect">全問正解</span>';
+      badgeHtml = '<span class="quiz-card-badge badge-new">未回答</span>';
     }
 
     card.innerHTML = `
-      <img src="pages/page${pageData.page}_masked.png?v=${CACHE_BUST}" loading="lazy">
-      <div class="page-card-info">
-        <div>${getPageLabel(pageData)}</div>
-        <div class="count">${stats.correct}/${stats.total} 正解</div>
+      <img class="quiz-card-thumb" src="data/${meta.id}/pages/page1_masked.png?v=${CACHE_BUST}" loading="lazy">
+      <div class="quiz-card-body">
+        <div class="quiz-card-title">${meta.title}</div>
+        <div class="quiz-card-stats">${meta.totalRegions}問 / ${meta.pageCount}ページ</div>
         ${badgeHtml}
       </div>
     `;
-    card.addEventListener('click', () => startQuiz(pageData));
-    grid.appendChild(card);
+    card.addEventListener('click', () => onQuizCardClick(meta));
+    list.appendChild(card);
   }
 
   showScreen('home');
 }
 
 // ============================================================
-// Quiz
+// Quiz Card Click
 // ============================================================
-function startQuiz(pageData, reviewOnly = false) {
-  currentPage = pageData;
-
-  if (reviewOnly) {
-    currentRegions = pageData.regions.filter(r => getLastResult(r.id) === false);
+function onQuizCardClick(meta) {
+  const progress = getSavedProgress(meta.id);
+  if (progress && progress.currentIndex > 0) {
+    showResumeScreen(meta, progress);
   } else {
-    currentRegions = [...pageData.regions];
+    loadAndStartQuiz(meta, false, false);
   }
+}
 
-  if (currentRegions.length === 0) {
-    alert('対象の問題がありません');
-    return;
+// ============================================================
+// Resume Screen
+// ============================================================
+function showResumeScreen(meta, progress) {
+  currentQuizMeta = meta;
+  document.getElementById('resume-title').textContent = meta.title;
+  document.getElementById('resume-info').textContent =
+    `${progress.currentIndex} / ${meta.totalRegions} 問目から`;
+
+  const incorrectCount = progress.results.filter(r => !r.correct).length;
+  const reviewBtn = document.getElementById('resume-review-btn');
+  reviewBtn.disabled = incorrectCount === 0;
+  reviewBtn.textContent = `間違えた問題だけ（${incorrectCount}問）`;
+
+  showScreen('resume');
+}
+
+// ============================================================
+// Load Quiz Data & Start
+// ============================================================
+async function loadAndStartQuiz(meta, resume, reviewOnly) {
+  try {
+    const resp = await fetch(`data/${meta.id}/pages/regions.json?v=${CACHE_BUST}`);
+    currentQuizData = await resp.json();
+    currentQuizMeta = meta;
+
+    allRegions = [];
+    for (const page of currentQuizData.pages) {
+      for (const region of page.regions) {
+        allRegions.push({
+          ...region,
+          pageNum: page.page,
+          pageWidth: page.width,
+          pageHeight: page.height,
+        });
+      }
+    }
+
+    if (reviewOnly) {
+      const progress = getSavedProgress(meta.id);
+      const incorrectIds = new Set();
+      if (progress) {
+        for (const r of progress.results) {
+          if (!r.correct) incorrectIds.add(r.id);
+        }
+      }
+      allRegions = allRegions.filter(r => incorrectIds.has(r.id));
+      clearProgress(meta.id);
+    }
+
+    if (allRegions.length === 0) {
+      alert('対象の問題がありません');
+      renderHome();
+      return;
+    }
+
+    if (resume) {
+      const progress = getSavedProgress(meta.id);
+      if (progress) {
+        currentIndex = progress.currentIndex;
+        sessionResults = [];
+        for (const r of progress.results) {
+          const region = allRegions.find(ar => ar.id === r.id);
+          if (region) sessionResults.push({ region, correct: r.correct });
+        }
+      } else {
+        currentIndex = 0;
+        sessionResults = [];
+      }
+    } else {
+      currentIndex = 0;
+      sessionResults = [];
+      clearProgress(meta.id);
+    }
+
+    beginQuiz();
+  } catch (err) {
+    alert('クイズデータの読み込みに失敗しました');
+    renderHome();
   }
+}
 
-  currentIndex = 0;
-  sessionResults = [];
-
-  document.getElementById('quiz-title').textContent = getPageLabel(pageData);
-  document.getElementById('quiz-page-info').textContent = `${currentRegions.length}問`;
+// ============================================================
+// Begin Quiz
+// ============================================================
+function beginQuiz() {
+  document.getElementById('quiz-title').textContent = currentQuizData.title;
+  document.getElementById('quiz-page-info').textContent = `${allRegions.length}問`;
 
   canvas = document.getElementById('quizCanvas');
   ctx = canvas.getContext('2d');
+  currentPageNum = -1;
 
-  // Load images
-  const maskedPromise = loadImage(`pages/page${pageData.page}_masked.png?v=${CACHE_BUST}`);
-  const originalPromise = loadImage(`pages/page${pageData.page}.png?v=${CACHE_BUST}`);
+  loadPageAndDraw(currentIndex);
+}
 
-  Promise.all([maskedPromise, originalPromise]).then(([masked, original]) => {
-    maskedImg = masked;
-    originalImg = original;
+// ============================================================
+// Page Image Loading & Drawing
+// ============================================================
+function loadPageAndDraw(regionIndex) {
+  if (regionIndex >= allRegions.length) return;
 
-    canvas.width = masked.width;
-    canvas.height = masked.height;
-    canvas.style.aspectRatio = `${masked.width} / ${masked.height}`;
-    ctx.drawImage(maskedImg, 0, 0);
+  const targetPageNum = allRegions[regionIndex].pageNum;
 
-    ctx.strokeStyle = 'rgba(200, 200, 200, 0.4)';
-    ctx.lineWidth = 1;
-    for (const r of currentRegions) {
-      ctx.strokeRect(r.x, r.y, r.w, r.h);
-    }
+  if (targetPageNum !== currentPageNum) {
+    currentPageNum = targetPageNum;
+    const quizId = currentQuizData.id;
+    const maskedP = loadImage(`data/${quizId}/pages/page${targetPageNum}_masked.png?v=${CACHE_BUST}`);
+    const origP = loadImage(`data/${quizId}/pages/page${targetPageNum}.png?v=${CACHE_BUST}`);
 
+    Promise.all([maskedP, origP]).then(([masked, original]) => {
+      maskedImg = masked;
+      originalImg = original;
+
+      canvas.width = masked.width;
+      canvas.height = masked.height;
+      canvas.style.aspectRatio = `${masked.width} / ${masked.height}`;
+
+      redrawCurrentPage();
+      updateProgress();
+      showRevealButton();
+      showScreen('quiz');
+    });
+  } else {
+    redrawCurrentPage();
     updateProgress();
     showRevealButton();
     showScreen('quiz');
-  });
+  }
+}
+
+function redrawCurrentPage() {
+  ctx.drawImage(maskedImg, 0, 0);
+
+  for (let i = 0; i < currentIndex; i++) {
+    const r = allRegions[i];
+    if (r.pageNum !== currentPageNum) continue;
+
+    const result = sessionResults.find(sr => sr.region.id === r.id);
+    if (result) {
+      ctx.drawImage(originalImg, r.x, r.y, r.w, r.h, r.x, r.y, r.w, r.h);
+      ctx.strokeStyle = result.correct ? '#34c759' : '#ff3b30';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(r.x - 2, r.y - 2, r.w + 4, r.h + 4);
+    }
+  }
+
+  ctx.strokeStyle = 'rgba(200, 200, 200, 0.4)';
+  ctx.lineWidth = 1;
+  for (let i = currentIndex; i < allRegions.length; i++) {
+    const r = allRegions[i];
+    if (r.pageNum === currentPageNum) {
+      ctx.strokeRect(r.x, r.y, r.w, r.h);
+    }
+  }
 }
 
 function loadImage(src) {
@@ -374,10 +578,13 @@ function loadImage(src) {
   });
 }
 
+// ============================================================
+// Quiz Interaction
+// ============================================================
 function revealCurrentAnswer() {
-  if (currentIndex >= currentRegions.length) return;
+  if (currentIndex >= allRegions.length) return;
 
-  const r = currentRegions[currentIndex];
+  const r = allRegions[currentIndex];
 
   ctx.drawImage(
     maskedImg,
@@ -408,39 +615,42 @@ function scrollToRegion(r) {
 }
 
 function judgeAnswer(correct) {
-  const r = currentRegions[currentIndex];
+  const r = allRegions[currentIndex];
   recordResult(r.id, correct);
   sessionResults.push({ region: r, correct });
 
-  if (correct) {
-    ctx.strokeStyle = '#34c759';
-  } else {
-    ctx.strokeStyle = '#ff3b30';
-  }
+  ctx.strokeStyle = correct ? '#34c759' : '#ff3b30';
   ctx.lineWidth = 3;
   ctx.strokeRect(r.x - 2, r.y - 2, r.w + 4, r.h + 4);
 
   currentIndex++;
+  saveProgress();
   updateProgress();
 
-  if (currentIndex < currentRegions.length) {
-    showRevealButton();
+  if (currentIndex < allRegions.length) {
+    const nextPageNum = allRegions[currentIndex].pageNum;
+    if (nextPageNum !== currentPageNum) {
+      loadPageAndDraw(currentIndex);
+    } else {
+      showRevealButton();
+    }
   } else {
+    clearProgress(currentQuizData.id);
     showDoneButtons();
   }
 }
 
 function updateProgress() {
-  const pct = currentRegions.length > 0
-    ? Math.round((currentIndex / currentRegions.length) * 100) : 0;
+  const pct = allRegions.length > 0
+    ? Math.round((currentIndex / allRegions.length) * 100) : 0;
   document.getElementById('progress-fill').style.width = pct + '%';
   document.getElementById('progress-text').textContent =
-    `${currentIndex} / ${currentRegions.length}`;
+    `${currentIndex} / ${allRegions.length}`;
 }
 
 function highlightActiveRegion() {
-  if (currentIndex >= currentRegions.length) return;
-  const r = currentRegions[currentIndex];
+  if (currentIndex >= allRegions.length) return;
+  const r = allRegions[currentIndex];
 
   ctx.fillStyle = '#fde8c8';
   ctx.fillRect(r.x, r.y, r.w, r.h);
@@ -487,35 +697,33 @@ function showResults() {
   document.getElementById('results-box').innerHTML = `
     <div style="font-size:40px">${emoji}</div>
     <div class="results-score">${correctCount}<span> / ${total}</span></div>
-    <div class="results-label">${pct}% 正解（${getPageLabel(currentPage)}）</div>
+    <div class="results-label">${pct}% 正解（${currentQuizData.title}）</div>
   `;
 
-  const reviewEl = document.getElementById('review-section');
   const incorrectResults = sessionResults.filter(r => !r.correct);
-  if (incorrectResults.length > 0) {
-    reviewEl.innerHTML = `<h3>不正解: ${incorrectResults.length}問</h3>` +
-      incorrectResults.map(r =>
-        `<div class="review-item">
-          <span class="review-icon">&#x274C;</span>
-          <span>${r.region.id}</span>
-        </div>`
-      ).join('');
-  } else {
-    reviewEl.innerHTML = '<h3>全問正解!</h3>';
-  }
 
   const actionsEl = document.getElementById('results-actions');
   actionsEl.innerHTML = `
     <button class="btn btn-secondary" onclick="renderHome()">ホームへ</button>
-    <button class="btn btn-primary" onclick="startQuiz(currentPage)">もう一度（全問）</button>
+    <button class="btn btn-primary" onclick="loadAndStartQuiz(currentQuizMeta, false, false)">もう一度（全問）</button>
     <button class="btn btn-primary" style="background:#ff9500"
-      onclick="startQuiz(currentPage, true)"
+      onclick="retryIncorrect()"
       ${incorrectResults.length === 0 ? 'disabled' : ''}>
       間違えた問題だけ（${incorrectResults.length}問）
     </button>
   `;
 
   showScreen('results');
+}
+
+function retryIncorrect() {
+  const incorrectRegions = sessionResults.filter(r => !r.correct).map(r => r.region);
+  if (incorrectRegions.length === 0) return;
+
+  allRegions = incorrectRegions;
+  currentIndex = 0;
+  sessionResults = [];
+  beginQuiz();
 }
 
 // ============================================================
@@ -526,32 +734,33 @@ document.getElementById('correct-btn').addEventListener('click', () => judgeAnsw
 document.getElementById('incorrect-btn').addEventListener('click', () => judgeAnswer(false));
 
 document.getElementById('quiz-back').addEventListener('click', () => {
-  if (currentIndex > 0 && currentIndex < currentRegions.length) {
-    if (!confirm('中断しますか？')) return;
+  if (currentIndex > 0 && currentIndex < allRegions.length) {
+    saveProgress();
   }
   renderHome();
 });
 
 document.getElementById('done-home-btn').addEventListener('click', showResults);
-document.getElementById('done-review-btn').addEventListener('click', () => {
-  showResults();
-});
+document.getElementById('done-review-btn').addEventListener('click', showResults);
 
 document.getElementById('results-back').addEventListener('click', renderHome);
+
+document.getElementById('resume-back').addEventListener('click', renderHome);
+document.getElementById('resume-continue-btn').addEventListener('click', () => {
+  loadAndStartQuiz(currentQuizMeta, true, false);
+});
+document.getElementById('resume-restart-btn').addEventListener('click', () => {
+  clearProgress(currentQuizMeta.id);
+  loadAndStartQuiz(currentQuizMeta, false, false);
+});
+document.getElementById('resume-review-btn').addEventListener('click', () => {
+  loadAndStartQuiz(currentQuizMeta, false, true);
+});
 
 // ============================================================
 // Init
 // ============================================================
-loadRegions().catch(err => {
-  document.body.innerHTML = `
-    <div style="padding:40px; text-align:center; font-size:16px;">
-      <h2>読み込みエラー</h2>
-      <p style="margin-top:16px; color:#86868b;">
-        pages/regions.json の読み込みに失敗しました。
-      </p>
-    </div>
-  `;
-});
+init();
 </script>
 </body>
 </html>
