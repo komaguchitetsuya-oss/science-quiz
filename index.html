@@ -267,8 +267,8 @@
       <h1 class="user-select-title">理科クイズ</h1>
       <p class="user-select-sub">だれが使いますか？</p>
       <div class="user-select-row">
-        <button class="user-select-btn user-select-child" onclick="selectUser('child')">こども</button>
-        <button class="user-select-btn user-select-parent" onclick="selectUser('parent')">おとな</button>
+        <button class="user-select-btn user-select-child" onclick="selectUser('child')">さとか</button>
+        <button class="user-select-btn user-select-parent" onclick="selectUser('parent')">ぱぱ</button>
       </div>
     </div>
   </div>
@@ -417,7 +417,7 @@ function switchUser() {
 function updateUserLabel() {
   const label = document.getElementById('user-label');
   if (label && currentUser) {
-    label.textContent = currentUser === 'child' ? 'こども' : 'おとな';
+    label.textContent = currentUser === 'child' ? 'さとか' : 'ぱぱ';
   }
 }
 
