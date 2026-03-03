@@ -161,6 +161,34 @@
     }
     .progress-text { font-size: 13px; color: #86868b; white-space: nowrap; }
 
+    .page-nav-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+    .page-nav-btn {
+      background: none;
+      border: 1px solid #e5e5e7;
+      border-radius: 6px;
+      padding: 4px 12px;
+      font-size: 14px;
+      color: #007aff;
+      cursor: pointer;
+      min-height: 32px;
+    }
+    .page-nav-btn:disabled { opacity: 0.3; color: #86868b; }
+    .page-nav-label {
+      font-size: 13px; color: #86868b; font-weight: 600;
+      min-width: 80px; text-align: center;
+    }
+    .btn-finish {
+      background: #ff9500; color: #fff; border: none; border-radius: 6px;
+      padding: 4px 12px; font-size: 13px; font-weight: 600;
+      cursor: pointer; min-height: 32px; margin-left: auto;
+    }
+
     .btn-row { display: flex; gap: 10px; }
     .btn {
       flex: 1; padding: 14px; font-size: 16px; font-weight: 600;
@@ -174,13 +202,18 @@
     .btn-secondary { background: #e5e5e7; color: #1d1d1f; }
     .btn:disabled { opacity: 0.35; }
 
-    .btn, .quiz-card, .back-btn {
+    .btn, .quiz-card, .back-btn, .page-nav-btn, .btn-finish {
       touch-action: manipulation;
       -webkit-touch-callout: none;
       -webkit-user-select: none;
       user-select: none;
     }
     .btn { min-height: 48px; }
+    #undo-btn, #done-undo-btn {
+      flex: 0 0 auto;
+      padding: 14px 16px;
+      font-size: 14px;
+    }
     .hidden { display: none !important; }
 
     /* ===== Results ===== */
@@ -231,7 +264,14 @@
         <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
         <span class="progress-text" id="progress-text"></span>
       </div>
+      <div class="page-nav-row" id="page-nav-row">
+        <button class="page-nav-btn" id="page-prev-btn">&#x25C0;</button>
+        <span class="page-nav-label" id="page-nav-label"></span>
+        <button class="page-nav-btn" id="page-next-btn">&#x25B6;</button>
+        <button class="btn-finish" id="finish-btn">終了</button>
+      </div>
       <div class="btn-row" id="reveal-row">
+        <button class="btn btn-secondary hidden" id="undo-btn">&#x21A9; 戻る</button>
         <button class="btn btn-primary" id="reveal-btn">答えを表示</button>
       </div>
       <div class="btn-row hidden" id="judge-row">
@@ -239,6 +279,7 @@
         <button class="btn btn-incorrect" id="incorrect-btn">&#x274C; 不正解</button>
       </div>
       <div class="btn-row hidden" id="done-row">
+        <button class="btn btn-secondary" id="done-undo-btn">&#x21A9; 戻る</button>
         <button class="btn btn-primary" id="done-results-btn">結果を見る</button>
       </div>
     </div>
@@ -275,6 +316,8 @@ let targetRegionIds = null;
 let isFullRound = false;
 let currentIndex = 0;
 let sessionResults = [];
+let answeredSet = new Set();
+let quizPageNumbers = [];
 let currentPageNum = -1;
 let maskedImg = null;
 let originalImg = null;
@@ -307,6 +350,15 @@ function recordResult(regionId, correct) {
   if (!h[regionId]) h[regionId] = [];
   h[regionId].push({ date: new Date().toISOString(), correct });
   saveHistory(h);
+}
+
+function removeLastHistoryEntry(regionId) {
+  const h = loadHistory();
+  if (h[regionId] && h[regionId].length > 0) {
+    h[regionId].pop();
+    if (h[regionId].length === 0) delete h[regionId];
+    saveHistory(h);
+  }
 }
 
 // ============================================================
@@ -357,6 +409,14 @@ function saveRound(quizId, results) {
     total: results.length,
   });
   localStorage.setItem(ROUNDS_KEY, JSON.stringify(rounds));
+}
+function removeLastRound(quizId) {
+  const rounds = loadRounds();
+  if (rounds[quizId] && rounds[quizId].length > 0) {
+    rounds[quizId].pop();
+    if (rounds[quizId].length === 0) delete rounds[quizId];
+    localStorage.setItem(ROUNDS_KEY, JSON.stringify(rounds));
+  }
 }
 
 // ============================================================
@@ -436,8 +496,8 @@ function renderHome() {
     card.className = 'quiz-card';
 
     let badgeHtml = '';
-    if (progress && progress.currentIndex > 0) {
-      badgeHtml = `<span class="quiz-card-badge badge-in-progress">回答途中 (${progress.currentIndex}/${meta.totalRegions})</span>`;
+    if (progress && progress.results && progress.results.length > 0) {
+      badgeHtml = `<span class="quiz-card-badge badge-in-progress">回答途中 (${progress.results.length}/${meta.totalRegions}問)</span>`;
     } else if (rounds.length > 0) {
       const lastR = rounds[rounds.length - 1];
       const lastPct = Math.round((lastR.correct / lastR.total) * 100);
@@ -482,7 +542,6 @@ async function showDetailScreen(meta) {
     return;
   }
 
-  // Build region list with page info
   const allIds = [];
   const pageNums = [];
   for (const page of quizData.pages) {
@@ -546,11 +605,11 @@ async function showDetailScreen(meta) {
   // Action buttons
   html += '<div class="detail-actions">';
 
-  if (progress && progress.currentIndex > 0) {
+  if (progress && progress.results && progress.results.length > 0) {
     const total = progress.regionIds ? progress.regionIds.length : meta.totalRegions;
     const modeText = progress.isFullRound ? '' : '（フィルター）';
     html += `<button class="btn btn-primary" onclick="resumeQuiz()">
-      続きから再開${modeText}（${progress.currentIndex}/${total}問目）</button>`;
+      続きから再開${modeText}（${progress.results.length}/${total}問 回答済み）</button>`;
   }
 
   html += `<button class="btn btn-primary" onclick="startFullRound()">
@@ -600,7 +659,6 @@ async function loadAndStartQuiz(meta, options) {
     currentQuizData = quizData;
     currentQuizMeta = meta;
 
-    // Flatten all regions across all pages
     allQuizRegions = [];
     for (const page of quizData.pages) {
       for (const region of page.regions) {
@@ -627,9 +685,18 @@ async function loadAndStartQuiz(meta, options) {
         }
         currentIndex = progress.currentIndex;
         sessionResults = [];
+        answeredSet = new Set();
         for (const r of progress.results) {
           const region = allRegions.find(ar => ar.id === r.id);
-          if (region) sessionResults.push({ region, correct: r.correct });
+          if (region) {
+            sessionResults.push({ region, correct: r.correct });
+            answeredSet.add(r.id);
+          }
+        }
+        // Find first unanswered from currentIndex
+        if (currentIndex < allRegions.length && answeredSet.has(allRegions[currentIndex].id)) {
+          const next = findNextUnanswered(currentIndex);
+          if (next !== -1) currentIndex = next;
         }
       } else {
         allRegions = [...allQuizRegions];
@@ -637,6 +704,7 @@ async function loadAndStartQuiz(meta, options) {
         isFullRound = true;
         currentIndex = 0;
         sessionResults = [];
+        answeredSet = new Set();
       }
     } else if (filterMaxPct !== null) {
       const accuracy = computeRegionAccuracy(meta.id);
@@ -650,6 +718,7 @@ async function loadAndStartQuiz(meta, options) {
       isFullRound = false;
       currentIndex = 0;
       sessionResults = [];
+      answeredSet = new Set();
       clearProgress(meta.id);
     } else {
       allRegions = [...allQuizRegions];
@@ -657,6 +726,7 @@ async function loadAndStartQuiz(meta, options) {
       isFullRound = true;
       currentIndex = 0;
       sessionResults = [];
+      answeredSet = new Set();
       clearProgress(meta.id);
     }
 
@@ -691,13 +761,16 @@ function beginQuiz() {
   ctx.imageSmoothingEnabled = false;
   currentPageNum = -1;
 
+  quizPageNumbers = [...new Set(allRegions.map(r => r.pageNum))].sort((a, b) => a - b);
+
   loadPageAndDraw(currentIndex);
 }
 
 // ============================================================
 // Page Image Loading & Drawing
 // ============================================================
-function loadPageAndDraw(regionIndex) {
+function loadPageAndDraw(regionIndex, afterDraw) {
+  afterDraw = afterDraw || showRevealButton;
   if (regionIndex >= allRegions.length) return;
 
   const targetPageNum = allRegions[regionIndex].pageNum;
@@ -718,13 +791,15 @@ function loadPageAndDraw(regionIndex) {
 
       redrawCurrentPage();
       updateProgress();
-      showRevealButton();
+      updatePageNav();
+      afterDraw();
       showScreen('quiz');
     });
   } else {
     redrawCurrentPage();
     updateProgress();
-    showRevealButton();
+    updatePageNav();
+    afterDraw();
     showScreen('quiz');
   }
 }
@@ -742,27 +817,23 @@ function redrawCurrentPage() {
   }
 
   // Draw already-answered regions on this page
-  for (let i = 0; i < currentIndex; i++) {
-    const r = allRegions[i];
+  for (const sr of sessionResults) {
+    const r = sr.region;
     if (r.pageNum !== currentPageNum) continue;
-
-    const result = sessionResults.find(sr => sr.region.id === r.id);
-    if (result) {
-      ctx.drawImage(originalImg, r.x, r.y, r.w, r.h, r.x, r.y, r.w, r.h);
-      ctx.strokeStyle = result.correct ? '#34c759' : '#ff3b30';
-      ctx.lineWidth = 3;
-      ctx.strokeRect(r.x - 2, r.y - 2, r.w + 4, r.h + 4);
-    }
+    ctx.drawImage(originalImg, r.x, r.y, r.w, r.h, r.x, r.y, r.w, r.h);
+    ctx.strokeStyle = sr.correct ? '#34c759' : '#ff3b30';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(r.x - 2, r.y - 2, r.w + 4, r.h + 4);
   }
 
-  // Draw hint borders for future regions on this page
+  // Draw hint borders for unanswered regions on this page (excluding current)
   ctx.strokeStyle = 'rgba(200, 200, 200, 0.4)';
   ctx.lineWidth = 1;
-  for (let i = currentIndex; i < allRegions.length; i++) {
-    const r = allRegions[i];
-    if (r.pageNum === currentPageNum) {
-      ctx.strokeRect(r.x, r.y, r.w, r.h);
-    }
+  for (const r of allRegions) {
+    if (r.pageNum !== currentPageNum) continue;
+    if (answeredSet.has(r.id)) continue;
+    if (currentIndex < allRegions.length && r.id === allRegions[currentIndex].id) continue;
+    ctx.strokeRect(r.x, r.y, r.w, r.h);
   }
 }
 
@@ -811,41 +882,101 @@ function scrollToRegion(r) {
   wrapper.scrollTo({ top: targetY, behavior: 'smooth' });
 }
 
+// ============================================================
+// Navigation Helpers
+// ============================================================
+function findNextUnanswered(fromIndex) {
+  for (let i = fromIndex; i < allRegions.length; i++) {
+    if (!answeredSet.has(allRegions[i].id)) return i;
+  }
+  for (let i = 0; i < fromIndex; i++) {
+    if (!answeredSet.has(allRegions[i].id)) return i;
+  }
+  return -1;
+}
+
+function findFirstUnansweredOnPage(pageNum) {
+  for (let i = 0; i < allRegions.length; i++) {
+    if (allRegions[i].pageNum === pageNum && !answeredSet.has(allRegions[i].id)) return i;
+  }
+  return -1;
+}
+
+// ============================================================
+// Judge & Undo
+// ============================================================
 function judgeAnswer(correct) {
   const r = allRegions[currentIndex];
   recordResult(r.id, correct);
   sessionResults.push({ region: r, correct });
+  answeredSet.add(r.id);
 
   ctx.strokeStyle = correct ? '#34c759' : '#ff3b30';
   ctx.lineWidth = 3;
   ctx.strokeRect(r.x - 2, r.y - 2, r.w + 4, r.h + 4);
 
-  currentIndex++;
-  saveProgress();
-  updateProgress();
+  const nextIndex = findNextUnanswered(currentIndex + 1);
 
-  if (currentIndex < allRegions.length) {
+  if (nextIndex === -1) {
+    currentIndex = allRegions.length; // signal done
+    clearProgress(currentQuizData.id);
+    if (isFullRound) {
+      saveRound(currentQuizData.id, sessionResults);
+    }
+    updateProgress();
+    updatePageNav();
+    showDoneRow();
+  } else {
+    currentIndex = nextIndex;
+    saveProgress();
+    updateProgress();
+    updatePageNav();
+
     const nextPageNum = allRegions[currentIndex].pageNum;
     if (nextPageNum !== currentPageNum) {
       loadPageAndDraw(currentIndex);
     } else {
       showRevealButton();
     }
+  }
+}
+
+function undoLastAnswer() {
+  if (sessionResults.length === 0) return;
+
+  const wasDone = currentIndex >= allRegions.length;
+  if (wasDone && isFullRound) {
+    removeLastRound(currentQuizData.id);
+  }
+
+  const lastResult = sessionResults.pop();
+  const regionId = lastResult.region.id;
+
+  answeredSet.delete(regionId);
+  removeLastHistoryEntry(regionId);
+
+  // Find the index of the undone region in allRegions
+  currentIndex = allRegions.findIndex(r => r.id === regionId);
+
+  saveProgress();
+
+  const targetPageNum = allRegions[currentIndex].pageNum;
+  if (targetPageNum !== currentPageNum) {
+    loadPageAndDraw(currentIndex, revealCurrentAnswer);
   } else {
-    clearProgress(currentQuizData.id);
-    if (isFullRound) {
-      saveRound(currentQuizData.id, sessionResults);
-    }
-    showDoneRow();
+    redrawCurrentPage();
+    updateProgress();
+    updatePageNav();
+    revealCurrentAnswer();
   }
 }
 
 function updateProgress() {
-  const pct = allRegions.length > 0
-    ? Math.round((currentIndex / allRegions.length) * 100) : 0;
+  const answered = answeredSet.size;
+  const total = allRegions.length;
+  const pct = total > 0 ? Math.round((answered / total) * 100) : 0;
   document.getElementById('progress-fill').style.width = pct + '%';
-  document.getElementById('progress-text').textContent =
-    `${currentIndex} / ${allRegions.length}`;
+  document.getElementById('progress-text').textContent = `${answered} / ${total}`;
 }
 
 function highlightActiveRegion() {
@@ -862,17 +993,112 @@ function highlightActiveRegion() {
   scrollToRegion(r);
 }
 
+// ============================================================
+// Page Navigation
+// ============================================================
+function updatePageNav() {
+  const pageIdx = quizPageNumbers.indexOf(currentPageNum);
+  const label = document.getElementById('page-nav-label');
+  const prevBtn = document.getElementById('page-prev-btn');
+  const nextBtn = document.getElementById('page-next-btn');
+
+  label.textContent = `p${currentPageNum} / ${quizPageNumbers.length}ページ`;
+  prevBtn.disabled = (pageIdx <= 0);
+  nextBtn.disabled = (pageIdx >= quizPageNumbers.length - 1);
+}
+
+function skipToPage(pageNum) {
+  let idx = findFirstUnansweredOnPage(pageNum);
+
+  if (idx === -1) {
+    // All answered on this page — still navigate to show answers
+    idx = allRegions.findIndex(r => r.pageNum === pageNum);
+    if (idx === -1) return;
+  }
+
+  currentIndex = idx;
+  saveProgress();
+
+  if (pageNum !== currentPageNum) {
+    loadPageAndDraw(currentIndex);
+  } else {
+    redrawCurrentPage();
+    updateProgress();
+    updatePageNav();
+    showRevealButton();
+  }
+}
+
+function goToPrevPage() {
+  const pageIdx = quizPageNumbers.indexOf(currentPageNum);
+  if (pageIdx > 0) skipToPage(quizPageNumbers[pageIdx - 1]);
+}
+
+function goToNextPage() {
+  const pageIdx = quizPageNumbers.indexOf(currentPageNum);
+  if (pageIdx < quizPageNumbers.length - 1) skipToPage(quizPageNumbers[pageIdx + 1]);
+}
+
+function finishQuiz() {
+  const unansweredCount = allRegions.length - answeredSet.size;
+  if (unansweredCount > 0) {
+    if (!confirm(`未回答の問題が ${unansweredCount} 問あります。終了しますか？`)) return;
+  }
+
+  clearProgress(currentQuizData.id);
+  if (isFullRound && answeredSet.size === allRegions.length) {
+    saveRound(currentQuizData.id, sessionResults);
+  }
+
+  currentIndex = allRegions.length;
+  updateProgress();
+  showDoneRow();
+}
+
+// ============================================================
+// Button State Management
+// ============================================================
 function showRevealButton() {
   document.getElementById('reveal-row').classList.remove('hidden');
   document.getElementById('judge-row').classList.add('hidden');
   document.getElementById('done-row').classList.add('hidden');
+
+  // If current region is already answered (navigated to completed page), find next unanswered on this page
+  if (currentIndex < allRegions.length && answeredSet.has(allRegions[currentIndex].id)) {
+    const nextOnPage = findFirstUnansweredOnPage(currentPageNum);
+    if (nextOnPage !== -1) {
+      currentIndex = nextOnPage;
+    } else {
+      // All answered on this page — hide reveal, user can navigate via page nav
+      document.getElementById('reveal-btn').classList.add('hidden');
+      const undoBtn = document.getElementById('undo-btn');
+      if (sessionResults.length > 0) {
+        undoBtn.classList.remove('hidden');
+      } else {
+        undoBtn.classList.add('hidden');
+      }
+      return;
+    }
+  }
+
+  document.getElementById('reveal-btn').classList.remove('hidden');
+
+  const undoBtn = document.getElementById('undo-btn');
+  if (sessionResults.length > 0) {
+    undoBtn.classList.remove('hidden');
+  } else {
+    undoBtn.classList.add('hidden');
+  }
+
   highlightActiveRegion();
 }
+
 function showJudgeButtons() {
   document.getElementById('reveal-row').classList.add('hidden');
   document.getElementById('judge-row').classList.remove('hidden');
   document.getElementById('done-row').classList.add('hidden');
 }
+
 function showDoneRow() {
   document.getElementById('reveal-row').classList.add('hidden');
   document.getElementById('judge-row').classList.add('hidden');
@@ -884,25 +1110,31 @@ function showDoneRow() {
 // ============================================================
 function showResults() {
   const correctCount = sessionResults.filter(r => r.correct).length;
-  const total = sessionResults.length;
-  const pct = total > 0 ? Math.round((correctCount / total) * 100) : 0;
+  const answeredTotal = sessionResults.length;
+  const skippedCount = allRegions.length - answeredTotal;
+  const pct = answeredTotal > 0 ? Math.round((correctCount / answeredTotal) * 100) : 0;
 
   const rounds = getRounds(currentQuizData.id);
   let roundLabel = '';
-  if (isFullRound && rounds.length > 0) {
+  if (isFullRound && rounds.length > 0 && skippedCount === 0) {
     roundLabel = `<div style="font-size:15px;color:#007aff;font-weight:600;margin-top:4px">${rounds.length}周目 完了</div>`;
   }
 
   let emoji = pct === 100 ? '&#x1F389;' : pct >= 80 ? '&#x1F44D;' : pct >= 60 ? '&#x1F4AA;' : '&#x1F4DA;';
 
+  let skippedHtml = '';
+  if (skippedCount > 0) {
+    skippedHtml = `<div style="font-size:14px;color:#86868b;margin-top:4px">${skippedCount}問 スキップ</div>`;
+  }
+
   document.getElementById('results-box').innerHTML = `
     <div style="font-size:40px">${emoji}</div>
-    <div class="results-score">${correctCount}<span> / ${total}</span></div>
+    <div class="results-score">${correctCount}<span> / ${answeredTotal}</span></div>
     <div class="results-label">${pct}% 正解</div>
+    ${skippedHtml}
     ${roundLabel}
   `;
 
-  // Compute updated accuracy and filter counts
   const accuracy = computeRegionAccuracy(currentQuizData.id);
   const filterCounts = computeFilterCounts(accuracy, allQuizRegions);
   const incorrectCount = sessionResults.filter(r => !r.correct).length;
@@ -915,6 +1147,11 @@ function showResults() {
   if (incorrectCount > 0) {
     actionsHtml += `<button class="btn" style="background:#ff9500;color:#fff" onclick="retryIncorrect()">
       間違えた問題だけ（${incorrectCount}問）</button>`;
+  }
+
+  if (skippedCount > 0) {
+    actionsHtml += `<button class="btn" style="background:#86868b;color:#fff" onclick="retrySkipped()">
+      スキップした問題（${skippedCount}問）</button>`;
   }
 
   actionsHtml += `<button class="btn btn-primary" onclick="startFullRound()">全問をもう一度（${currentQuizMeta.totalRegions}問）</button>`;
@@ -941,6 +1178,22 @@ function retryIncorrect() {
   isFullRound = false;
   currentIndex = 0;
   sessionResults = [];
+  answeredSet = new Set();
+  clearProgress(currentQuizData.id);
+  beginQuiz();
+}
+
+function retrySkipped() {
+  const answeredIds = new Set(sessionResults.map(r => r.region.id));
+  const skippedRegions = allRegions.filter(r => !answeredIds.has(r.id));
+  if (skippedRegions.length === 0) return;
+
+  allRegions = skippedRegions;
+  targetRegionIds = new Set(allRegions.map(r => r.id));
+  isFullRound = false;
+  currentIndex = 0;
+  sessionResults = [];
+  answeredSet = new Set();
   clearProgress(currentQuizData.id);
   beginQuiz();
 }
@@ -951,9 +1204,15 @@ function retryIncorrect() {
 document.getElementById('reveal-btn').addEventListener('click', revealCurrentAnswer);
 document.getElementById('correct-btn').addEventListener('click', () => judgeAnswer(true));
 document.getElementById('incorrect-btn').addEventListener('click', () => judgeAnswer(false));
+document.getElementById('undo-btn').addEventListener('click', undoLastAnswer);
+document.getElementById('done-undo-btn').addEventListener('click', undoLastAnswer);
+
+document.getElementById('page-prev-btn').addEventListener('click', goToPrevPage);
+document.getElementById('page-next-btn').addEventListener('click', goToNextPage);
+document.getElementById('finish-btn').addEventListener('click', finishQuiz);
 
 document.getElementById('quiz-back').addEventListener('click', () => {
-  if (currentIndex > 0 && currentIndex < allRegions.length) {
+  if (answeredSet.size > 0 && answeredSet.size < allRegions.length) {
     saveProgress();
   }
   renderHome();
