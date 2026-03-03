@@ -161,9 +161,9 @@ def create_masked_image(img_array, orange_mask):
 
 def enhance_image(img):
     """スキャン画像のコントラストとシャープネスを向上させて可読性を上げる"""
-    img = ImageEnhance.Contrast(img).enhance(1.8)
-    img = ImageEnhance.Sharpness(img).enhance(2.5)
-    img = img.filter(ImageFilter.UnsharpMask(radius=1.5, percent=150, threshold=2))
+    img = ImageEnhance.Contrast(img).enhance(1.65)
+    img = ImageEnhance.Sharpness(img).enhance(2.1)
+    img = img.filter(ImageFilter.UnsharpMask(radius=1.5, percent=75, threshold=2))
     return img
 
 
