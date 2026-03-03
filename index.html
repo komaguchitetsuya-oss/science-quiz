@@ -36,11 +36,40 @@
     .page-info {
       font-size: 14px; color: #86868b; white-space: nowrap;
     }
+    .user-label {
+      font-size: 12px; color: #86868b; padding: 4px 8px;
+      background: #e8e8ed; border-radius: 4px; cursor: pointer;
+      border: none; white-space: nowrap;
+    }
+    .header-actions {
+      display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+    }
+    .restore-btn {
+      font-size: 12px; color: #007aff; background: none;
+      border: none; cursor: pointer; padding: 4px 6px;
+    }
 
     /* ===== Screen Management ===== */
     .screen { display: none; min-height: 100dvh; }
     .screen.active { display: flex; flex-direction: column; }
     #quiz.active { height: 100dvh; min-height: 0; overflow: hidden; }
+
+    /* ===== User Select ===== */
+    .user-select-container {
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; min-height: 100dvh; padding: 40px 20px;
+    }
+    .user-select-title { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+    .user-select-sub { font-size: 16px; color: #86868b; margin-bottom: 40px; }
+    .user-select-row { display: flex; gap: 20px; width: 100%; max-width: 400px; }
+    .user-select-btn {
+      flex: 1; padding: 24px; font-size: 20px; font-weight: 600;
+      border: none; border-radius: 16px; cursor: pointer; min-height: 80px;
+      touch-action: manipulation; -webkit-user-select: none; user-select: none;
+    }
+    .user-select-btn:active { transform: scale(0.97); }
+    .user-select-child { background: #007aff; color: #fff; }
+    .user-select-parent { background: #e5e5e7; color: #1d1d1f; }
 
     /* ===== Home ===== */
     .quiz-list { padding: 12px 16px; }
@@ -202,7 +231,7 @@
     .btn-secondary { background: #e5e5e7; color: #1d1d1f; }
     .btn:disabled { opacity: 0.35; }
 
-    .btn, .quiz-card, .back-btn, .page-nav-btn, .btn-finish {
+    .btn, .quiz-card, .back-btn, .page-nav-btn, .btn-finish, .user-select-btn {
       touch-action: manipulation;
       -webkit-touch-callout: none;
       -webkit-user-select: none;
@@ -232,10 +261,26 @@
 </head>
 <body>
 
+  <!-- ===== User Select ===== -->
+  <div id="user-select" class="screen active">
+    <div class="user-select-container">
+      <h1 class="user-select-title">理科クイズ</h1>
+      <p class="user-select-sub">だれが使いますか？</p>
+      <div class="user-select-row">
+        <button class="user-select-btn user-select-child" onclick="selectUser('child')">こども</button>
+        <button class="user-select-btn user-select-parent" onclick="selectUser('parent')">おとな</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ===== Home ===== -->
-  <div id="home" class="screen active">
+  <div id="home" class="screen">
     <div class="header">
       <h1>理科クイズ</h1>
+      <div class="header-actions">
+        <button class="restore-btn" id="restore-btn" onclick="restoreFromCloud()">復元</button>
+        <button class="user-label" id="user-label" onclick="switchUser()"></button>
+      </div>
     </div>
     <div class="quiz-list" id="quiz-list"></div>
   </div>
@@ -299,10 +344,19 @@
 // ============================================================
 // Configuration
 // ============================================================
-const HISTORY_KEY = 'quiz-v2-history';
-const PROGRESS_KEY = 'quiz-progress';
-const ROUNDS_KEY = 'quiz-rounds';
+const USER_KEY = 'quiz-current-user';
+const SYNC_URL = 'https://script.google.com/macros/s/AKfycbxvGI7fSVj3XZGcPHA2aAqWkEpV543WWM328tO1O1BAIwS9iVtM8vNaFphxvYUoztp4/exec';
 const CACHE_BUST = Date.now();
+
+let currentUser = null;
+let HISTORY_KEY, PROGRESS_KEY, ROUNDS_KEY;
+
+function setUserKeys(user) {
+  currentUser = user;
+  HISTORY_KEY = `quiz-${user}-history`;
+  PROGRESS_KEY = `quiz-${user}-progress`;
+  ROUNDS_KEY = `quiz-${user}-rounds`;
+}
 
 // ============================================================
 // State
@@ -324,6 +378,170 @@ let originalImg = null;
 let canvas, ctx;
 
 const quizDataCache = {};
+
+// ============================================================
+// Data Migration (one-time)
+// ============================================================
+function migrateOldData() {
+  const oldHistoryKey = 'quiz-v2-history';
+  const oldData = localStorage.getItem(oldHistoryKey);
+  if (oldData && !localStorage.getItem('quiz-child-history')) {
+    localStorage.setItem('quiz-child-history', oldData);
+    const oldProgress = localStorage.getItem('quiz-progress');
+    if (oldProgress) localStorage.setItem('quiz-child-progress', oldProgress);
+    const oldRounds = localStorage.getItem('quiz-rounds');
+    if (oldRounds) localStorage.setItem('quiz-child-rounds', oldRounds);
+    localStorage.removeItem(oldHistoryKey);
+    localStorage.removeItem('quiz-progress');
+    localStorage.removeItem('quiz-rounds');
+  }
+}
+
+// ============================================================
+// User Management
+// ============================================================
+async function selectUser(user) {
+  localStorage.setItem(USER_KEY, user);
+  setUserKeys(user);
+  updateUserLabel();
+  await loadQuizzesAndRenderHome();
+  flushSyncQueue();
+}
+
+function switchUser() {
+  localStorage.removeItem(USER_KEY);
+  currentUser = null;
+  showScreen('user-select');
+}
+
+function updateUserLabel() {
+  const label = document.getElementById('user-label');
+  if (label && currentUser) {
+    label.textContent = currentUser === 'child' ? 'こども' : 'おとな';
+  }
+}
+
+// ============================================================
+// Google Sheets Sync
+// ============================================================
+function syncToSheet(type, entries) {
+  if (!currentUser || !SYNC_URL) return;
+
+  const payload = { user: currentUser, type, entries };
+
+  fetch(SYNC_URL, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }).then(r => r.json()).then(data => {
+    if (data.status !== 'ok') console.warn('Sync warning:', data.message);
+  }).catch(() => {
+    queueFailedSync(type, entries);
+  });
+}
+
+function queueFailedSync(type, entries) {
+  try {
+    const key = `quiz-sync-queue-${currentUser}`;
+    const queue = JSON.parse(localStorage.getItem(key) || '[]');
+    queue.push({ type, entries });
+    if (queue.length > 500) queue.splice(0, queue.length - 500);
+    localStorage.setItem(key, JSON.stringify(queue));
+  } catch { /* ignore */ }
+}
+
+function flushSyncQueue() {
+  if (!currentUser) return;
+  const key = `quiz-sync-queue-${currentUser}`;
+  const queue = JSON.parse(localStorage.getItem(key) || '[]');
+  if (queue.length === 0) return;
+
+  const historyEntries = [];
+  const roundEntries = [];
+  for (const item of queue) {
+    if (item.type === 'history') historyEntries.push(...item.entries);
+    if (item.type === 'round') roundEntries.push(...item.entries);
+  }
+
+  const promises = [];
+  if (historyEntries.length > 0) {
+    promises.push(
+      fetch(SYNC_URL, {
+        method: 'POST',
+        body: JSON.stringify({ user: currentUser, type: 'history', entries: historyEntries })
+      }).then(r => r.json())
+    );
+  }
+  if (roundEntries.length > 0) {
+    promises.push(
+      fetch(SYNC_URL, {
+        method: 'POST',
+        body: JSON.stringify({ user: currentUser, type: 'round', entries: roundEntries })
+      }).then(r => r.json())
+    );
+  }
+
+  Promise.all(promises).then(() => {
+    localStorage.removeItem(key);
+  }).catch(() => { /* leave in queue */ });
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && currentUser) {
+    flushSyncQueue();
+  }
+});
+
+// ============================================================
+// Restore from Cloud
+// ============================================================
+async function restoreFromCloud() {
+  if (!currentUser) return;
+  if (!confirm('クラウドからデータを復元しますか？\n現在のローカルデータは上書きされます。')) return;
+
+  try {
+    const resp = await fetch(`${SYNC_URL}?user=${encodeURIComponent(currentUser)}`);
+    const data = await resp.json();
+    if (data.status !== 'ok') {
+      alert('復元に失敗しました: ' + (data.message || ''));
+      return;
+    }
+
+    const history = {};
+    for (const entry of data.history) {
+      if (entry.action === 'add') {
+        if (!history[entry.regionId]) history[entry.regionId] = [];
+        history[entry.regionId].push({ date: entry.date, correct: entry.correct });
+      } else if (entry.action === 'delete') {
+        if (history[entry.regionId] && history[entry.regionId].length > 0) {
+          history[entry.regionId].pop();
+          if (history[entry.regionId].length === 0) delete history[entry.regionId];
+        }
+      }
+    }
+
+    const rounds = {};
+    for (const entry of data.rounds) {
+      if (entry.action === 'add') {
+        if (!rounds[entry.quizId]) rounds[entry.quizId] = [];
+        rounds[entry.quizId].push({ date: entry.date, correct: entry.correct, total: entry.total });
+      } else if (entry.action === 'delete') {
+        if (rounds[entry.quizId] && rounds[entry.quizId].length > 0) {
+          rounds[entry.quizId].pop();
+          if (rounds[entry.quizId].length === 0) delete rounds[entry.quizId];
+        }
+      }
+    }
+
+    saveHistory(history);
+    localStorage.setItem(ROUNDS_KEY, JSON.stringify(rounds));
+    localStorage.setItem(PROGRESS_KEY, '{}');
+
+    alert('復元が完了しました');
+    renderHome();
+  } catch {
+    alert('復元に失敗しました（オフライン？）');
+  }
+}
 
 // ============================================================
 // Data Fetching
@@ -348,16 +566,19 @@ function saveHistory(h) { localStorage.setItem(HISTORY_KEY, JSON.stringify(h)); 
 function recordResult(regionId, correct) {
   const h = loadHistory();
   if (!h[regionId]) h[regionId] = [];
-  h[regionId].push({ date: new Date().toISOString(), correct });
+  const entry = { date: new Date().toISOString(), correct };
+  h[regionId].push(entry);
   saveHistory(h);
+  syncToSheet('history', [{ regionId, date: entry.date, correct, action: 'add' }]);
 }
 
 function removeLastHistoryEntry(regionId) {
   const h = loadHistory();
   if (h[regionId] && h[regionId].length > 0) {
-    h[regionId].pop();
+    const removed = h[regionId].pop();
     if (h[regionId].length === 0) delete h[regionId];
     saveHistory(h);
+    syncToSheet('history', [{ regionId, date: removed.date, correct: removed.correct, action: 'delete' }]);
   }
 }
 
@@ -403,19 +624,18 @@ function saveRound(quizId, results) {
   const rounds = loadRounds();
   if (!rounds[quizId]) rounds[quizId] = [];
   const correct = results.filter(r => r.correct).length;
-  rounds[quizId].push({
-    date: new Date().toISOString(),
-    correct,
-    total: results.length,
-  });
+  const entry = { date: new Date().toISOString(), correct, total: results.length };
+  rounds[quizId].push(entry);
   localStorage.setItem(ROUNDS_KEY, JSON.stringify(rounds));
+  syncToSheet('round', [{ quizId, date: entry.date, correct: entry.correct, total: entry.total, action: 'add' }]);
 }
 function removeLastRound(quizId) {
   const rounds = loadRounds();
   if (rounds[quizId] && rounds[quizId].length > 0) {
-    rounds[quizId].pop();
+    const removed = rounds[quizId].pop();
     if (rounds[quizId].length === 0) delete rounds[quizId];
     localStorage.setItem(ROUNDS_KEY, JSON.stringify(rounds));
+    syncToSheet('round', [{ quizId, date: removed.date, correct: removed.correct, total: removed.total, action: 'delete' }]);
   }
 }
 
@@ -462,6 +682,20 @@ function showScreen(id) {
 // Init
 // ============================================================
 async function init() {
+  migrateOldData();
+
+  const savedUser = localStorage.getItem(USER_KEY);
+  if (savedUser) {
+    setUserKeys(savedUser);
+    updateUserLabel();
+    await loadQuizzesAndRenderHome();
+    flushSyncQueue();
+  } else {
+    showScreen('user-select');
+  }
+}
+
+async function loadQuizzesAndRenderHome() {
   try {
     const resp = await fetch(`quizzes.json?v=${CACHE_BUST}`);
     const data = await resp.json();
@@ -558,7 +792,6 @@ async function showDetailScreen(meta) {
 
   let html = '';
 
-  // Round history
   if (rounds.length > 0) {
     html += '<div class="detail-box"><div class="detail-box-title">周回記録</div>';
     for (let i = 0; i < rounds.length; i++) {
@@ -572,7 +805,6 @@ async function showDetailScreen(meta) {
     html += '</div>';
   }
 
-  // Per-question accuracy grid
   let attempted = 0, perfect = 0;
   for (const item of allIds) {
     const acc = accuracy.get(item.id);
@@ -602,7 +834,6 @@ async function showDetailScreen(meta) {
   }
   html += '</div>';
 
-  // Action buttons
   html += '<div class="detail-actions">';
 
   if (progress && progress.results && progress.results.length > 0) {
@@ -693,7 +924,6 @@ async function loadAndStartQuiz(meta, options) {
             answeredSet.add(r.id);
           }
         }
-        // Find first unanswered from currentIndex
         if (currentIndex < allRegions.length && answeredSet.has(allRegions[currentIndex].id)) {
           const next = findNextUnanswered(currentIndex);
           if (next !== -1) currentIndex = next;
@@ -807,7 +1037,6 @@ function loadPageAndDraw(regionIndex, afterDraw) {
 function redrawCurrentPage() {
   ctx.drawImage(maskedImg, 0, 0);
 
-  // Pre-reveal: show answers for non-target regions on this page
   if (targetRegionIds) {
     for (const r of allQuizRegions) {
       if (r.pageNum !== currentPageNum) continue;
@@ -816,7 +1045,6 @@ function redrawCurrentPage() {
     }
   }
 
-  // Draw already-answered regions on this page
   for (const sr of sessionResults) {
     const r = sr.region;
     if (r.pageNum !== currentPageNum) continue;
@@ -826,7 +1054,6 @@ function redrawCurrentPage() {
     ctx.strokeRect(r.x - 2, r.y - 2, r.w + 4, r.h + 4);
   }
 
-  // Draw hint borders for unanswered regions on this page (excluding current)
   ctx.strokeStyle = 'rgba(200, 200, 200, 0.4)';
   ctx.lineWidth = 1;
   for (const r of allRegions) {
@@ -854,17 +1081,8 @@ function revealCurrentAnswer() {
 
   const r = allRegions[currentIndex];
 
-  ctx.drawImage(
-    maskedImg,
-    r.x - 2, r.y - 2, r.w + 4, r.h + 4,
-    r.x - 2, r.y - 2, r.w + 4, r.h + 4
-  );
-
-  ctx.drawImage(
-    originalImg,
-    r.x, r.y, r.w, r.h,
-    r.x, r.y, r.w, r.h
-  );
+  ctx.drawImage(maskedImg, r.x - 2, r.y - 2, r.w + 4, r.h + 4, r.x - 2, r.y - 2, r.w + 4, r.h + 4);
+  ctx.drawImage(originalImg, r.x, r.y, r.w, r.h, r.x, r.y, r.w, r.h);
 
   ctx.strokeStyle = '#e8a040';
   ctx.lineWidth = 2;
@@ -918,7 +1136,7 @@ function judgeAnswer(correct) {
   const nextIndex = findNextUnanswered(currentIndex + 1);
 
   if (nextIndex === -1) {
-    currentIndex = allRegions.length; // signal done
+    currentIndex = allRegions.length;
     clearProgress(currentQuizData.id);
     if (isFullRound) {
       saveRound(currentQuizData.id, sessionResults);
@@ -955,7 +1173,6 @@ function undoLastAnswer() {
   answeredSet.delete(regionId);
   removeLastHistoryEntry(regionId);
 
-  // Find the index of the undone region in allRegions
   currentIndex = allRegions.findIndex(r => r.id === regionId);
 
   saveProgress();
@@ -1011,7 +1228,6 @@ function skipToPage(pageNum) {
   let idx = findFirstUnansweredOnPage(pageNum);
 
   if (idx === -1) {
-    // All answered on this page — still navigate to show answers
     idx = allRegions.findIndex(r => r.pageNum === pageNum);
     if (idx === -1) return;
   }
@@ -1063,13 +1279,11 @@ function showRevealButton() {
   document.getElementById('judge-row').classList.add('hidden');
   document.getElementById('done-row').classList.add('hidden');
 
-  // If current region is already answered (navigated to completed page), find next unanswered on this page
   if (currentIndex < allRegions.length && answeredSet.has(allRegions[currentIndex].id)) {
     const nextOnPage = findFirstUnansweredOnPage(currentPageNum);
     if (nextOnPage !== -1) {
       currentIndex = nextOnPage;
     } else {
-      // All answered on this page — hide reveal, user can navigate via page nav
       document.getElementById('reveal-btn').classList.add('hidden');
       const undoBtn = document.getElementById('undo-btn');
       if (sessionResults.length > 0) {
